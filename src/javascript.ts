@@ -1,5 +1,5 @@
 import {parser} from "@lezer/javascript"
-import {SyntaxNode} from "@lezer/common"
+import {SyntaxNode, parseMixed, Parser, Tree} from "@lezer/common"
 import {LRLanguage, LanguageSupport, Sublanguage, sublanguageProp, defineLanguageFacet,
         delimitedIndent, flatIndent, continuedIndent, indentNodeProp,
         foldNodeProp, foldInside, syntaxTree} from "@codemirror/language"
@@ -9,12 +9,33 @@ import {completeFromList, ifNotIn} from "@codemirror/autocomplete"
 import {snippets, typescriptSnippets} from "./snippets"
 import {localCompletionSource, dontComplete} from "./complete"
 
+const dummyParser = new class extends Parser {
+  createParse(input: any) {
+    return {
+      advance: () => Tree.empty,
+      parsedPos: input.length,
+      stopAt: () => {},
+      fragments: []
+    } as any
+  }
+}
 /// A language provider based on the [Lezer JavaScript
 /// parser](https://github.com/lezer-parser/javascript), extended with
 /// highlighting and indentation information.
 export const javascriptLanguage = LRLanguage.define({
   name: "javascript",
   parser: parser.configure({
+    wrap: parseMixed((node, input) => {
+      if (node.name != "TemplateString") return null
+      let parent = node.node.parent
+      if (parent && parent.name == "Property") {
+        let propNameNode = parent.firstChild
+        if (propNameNode && input.read(propNameNode.from, propNameNode.to) === "code") {
+          return { parser: dummyParser }
+        }
+      }
+      return null
+    }),
     props: [
       indentNodeProp.add({
         IfStatement: continuedIndent({except: /^\s*({|else\b)/}),
@@ -163,4 +184,3 @@ export const autoCloseTags = EditorView.inputHandler.of((view, from, to, text, d
   ])
   return true
 })
-
